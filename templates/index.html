@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>SolarSytem</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<style>
+
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: black;
+    color: white;
+    font-family: Monospace;
+}
+canvas {
+    width: 100%;
+    height: 100%;
+}
+.top-right {
+    position: absolute;
+    top: 0;
+    right: 0;
+    margin: 10px;
+    z-index: 10000;
+}
+.bottom-middle {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 16px;
+    z-index: 1000;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+.markerLabel {
+    --baseColor: rgb(255, 250, 250);
+    color: var(--baseColor);
+    font-family: Monospace;
+    font-size: 14px;
+    padding: 2px;
+    background: rgba(0, 0, 0, 0.75);
+    border: 2px solid var(--baseColor);
+    border-radius: 5px;
+    overflow: hidden;
+}
+.markerLabel:hover {
+    color: #ffa500;
+    border: 2px solid #ffa500;
+    font-weight: bold;
+}
+</style>
+    </head>
+    <body>
+    <canvas id="canvas"></canvas>
+    <div class="top-right">
+    <select id="planetSelect">
+        <option value="" disabled selected>Select a planet</option>
+        <option value="Mercury">Mercury</option>
+        <option value="Venus">Venus</option>
+        <option value="Earth">Earth</option>
+        <option value="Moon">Moon</option>
+        <option value="Mars">Mars</option>
+        <option value="Jupiter">Jupiter</option>
+        <option value="Saturn">Saturn</option>
+        <option value="Uranus">Uranus</option>
+        <option value="Neptune">Neptune</option>
+        <option value="Pluto">Pluto</option>
+    </select>
+    </div>
+    <div class="bottom-middle">
+        <span id="cam-distance">3.141</span>[km]
+        time: <span id="utctime" ></span><br>
+        <span id="text-facts" style="font-size: 14px;"></span>
+    </div>
+
+<script src="{{url_for('static',filename='jsrc/three.module.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/OrbitControls.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/Stats.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/EarthComponent.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/SunComponent.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/PlanetComponent.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/RK4Component.js')}}"></script>
+<script src="{{url_for('static',filename='jsrc/CSS2DRenderer.js')}}"></script>
+<script>
+
+
+// GET DATA
+// ==================================================================================
+const pyData = {{ pyData|safe }};
+const pySvs = pyData.svs;
+// const futureOrbits = pyData.orbits;
+// console.log(planetMeshes);
+// console.log(futureOrbits);
+
+// BASIC SETUP
+// ==================================================================================
+const camera = new PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .0001, 3000 );
+camera.position.set( .5, .2, 4 );
+const scene = new Scene();
+scene.background = new Color( 0x141414 );
+
+const renderer = new WebGLRenderer({antialias: true,canvas: document.getElementById("canvas")});
+renderer.setPixelRatio( window.devicePixelRatio );
+renderer.setSize( window.innerWidth, window.innerHeight );
+const clock = new Clock();
+const stats = new Stats();
+stats.showPanel( 0 );
+document.body.appendChild( stats.dom );
+
+// CONTROLS
+// ==================================================================================
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize( window.innerWidth, window.innerHeight );
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0px';
+document.body.appendChild( labelRenderer.domElement );
+const controls = new OrbitControls( camera, labelRenderer.domElement );
+controls.update();
+
+// SUN
+// ==================================================================================
+const suntex = "{{url_for('static',filename='assets/lens_flare_1.jpeg')}}";
+const flareCircle = "{{url_for('static',filename='assets/lens_flare_circle_64x64.jpeg')}}";
+const flareHex = "{{url_for('static',filename='assets/lens_flare_hexagon_256x256.jpeg')}}";
+const sun = new Sun();
+sun.setModelOne(suntex, flareCircle, flareHex);
+scene.add( sun );
+sun.setPosition(pySvs.sun[0],pySvs.sun[1],pySvs.sun[2]);
+
+
+// PLANETS
+// ==================================================================================
+const sp = 1000000; 
+//scaling factor, from python we use a 1e-7, here we sclae by 1e-6, so planets are 10 bigger 
+const ringSprite = new TextureLoader().load( "{{url_for('static',filename='assets/ring.png')}}" );
+
+const planetMeshes = 
+{
+    'mercury':{'mesh': null},
+    'venus':{'mesh': null},
+    'earth':{'mesh': null},
+    'moon':{'mesh': null},
+    'mars':{'mesh': null},
+    'jupiter':{'mesh': null},
+    'saturn':{'mesh': null},
+    'uranus':{'mesh': null},
+    'neptune':{'mesh': null},
+    'pluto':{'mesh': null}
+}
+
+// Mercury: 2439.7 km
+// Venus: 6051.8 km
+// Earth: 6371.0 km
+// Mars: 3389.5 km
+// Jupiter: 69911 km
+// Saturn: 58232 km
+// Uranus: 25362 km
+// Neptune: 24622 km
+// Moon
+// Moon (Earth's Satellite): 1737.4 km
+// Dwarf Planet
+// Pluto: 1188.3 km
+
+const mercury = new Planet(2439.7/sp,0xada8a5,camera);
+mercury.init(
+    "{{url_for('static',filename='assets/2k_mercury.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_mercury_dark.png')}}",
+    pySvs.mercury,0.0,ringSprite
+);
+scene.add(mercury);
+planetMeshes['mercury'].mesh = mercury;
+
+const venus = new Planet(6051.8/sp,0xf8e2b0,camera);
+venus.init(
+    "{{url_for('static',filename='assets/2k_venus.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_venus_dark.png')}}",
+    pySvs.venus,177.4*Math.PI/180,ringSprite
+);
+scene.add(venus);
+planetMeshes['venus'].mesh = venus;
+
+const earth = new Earth3d(camera);
+earth.loadTextures(
+    pathDay="{{url_for('static',filename='assets/8081_earthmap10k.jpg')}}",
+    pathNight="{{url_for('static',filename='assets/8081_earthlights10k.jpg')}}");
+scene.add( earth );
+earth.setPosition(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
+earth.setSunOrigin();
+earth.rotation.x = -23.44*Math.PI/180;
+planetMeshes['earth'].mesh = earth;
+const arrowHelper = new ArrowHelper( 
+    new Vector3( 0, 1, 0 ), 
+    new Vector3( 0, 0, 0 ), 
+    EARHRADIUS*1.5, 0x6b93d6 );
+earth.add( arrowHelper );
+const earthRing = new Sprite( new SpriteMaterial( { 
+    map: ringSprite, 
+    color:0x6b93d6,
+    depthTest: false
+}));
+earth.add( earthRing );
+
+const moon = new Planet(1737.4/sp,0xe5e5e5,camera);
+moon.init(
+    "{{url_for('static',filename='assets/2k_moon.jpeg')}}",
+    "{{url_for('static',filename='assets/moonuv_dark.jpg')}}",
+    pySvs.moon,6.8*Math.PI/180,ringSprite
+);
+scene.add(moon);
+planetMeshes['moon'].mesh = moon;
+moon.spriteRing.visible = false;
+
+const mars = new Planet(3389.5/sp,0xE27B58,camera);
+mars.init(
+    "{{url_for('static',filename='assets/2k_mars.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_mars_dark.png')}}",
+    pySvs.mars,25.19*Math.PI/180,ringSprite
+);
+scene.add(mars);
+planetMeshes['mars'].mesh = mars;
+
+const jupiter = new Planet(69911/sp,0x90614D,camera);
+jupiter.init(
+    "{{url_for('static',filename='assets/2k_jupiter.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_jupiter_dark.png')}}",
+    pySvs.jupiter,3.13*Math.PI/180,ringSprite
+);
+scene.add(jupiter);
+planetMeshes['jupiter'].mesh = jupiter;
+
+const saturn = new Planet(58232/sp,0xe2bf7d,camera);
+saturn.init(
+    "{{url_for('static',filename='assets/2k_saturn.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_saturn_dark.png')}}",
+    pySvs.saturn,26.73*Math.PI/180,ringSprite
+);
+scene.add(saturn);
+planetMeshes['saturn'].mesh = saturn;
+
+const rstart = saturn.r * 1.3;
+const rend = saturn.r + rstart;
+const rmid = rstart + (rend-rstart)/2;
+const satring = "{{url_for('static',filename='assets/2k_saturn_ring_alpha.png')}}";
+const satringGeo = new RingGeometry(rstart, rend, 128);
+const  pos = satringGeo.attributes.position;
+const  satv = new Vector3();
+for (let i = 0; i < pos.count; i++){
+    satv.fromBufferAttribute(pos, i);
+    satringGeo.attributes.uv.setXY(i, satv.length() < rmid ? 0 : 1, 1); // 5<6>7
+}
+const satringMat = new MeshBasicMaterial({
+    map: textureLoader.load(satring),
+    color: 0xffffff,
+    side: DoubleSide,
+    transparent: true
+});
+const saturnRing = new Mesh(satringGeo, satringMat);
+saturnRing.rotation.x = Math.PI/2*95;
+saturn.add(saturnRing);
+
+const uranus = new Planet(25362/sp,0xafdbf5,camera);
+uranus.init(
+    "{{url_for('static',filename='assets/2k_uranus.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_uranus_dark.png')}}",
+    pySvs.uranus,97.77*Math.PI/180,ringSprite
+);
+scene.add(uranus);
+planetMeshes['uranus'].mesh = uranus;
+
+const neptune = new Planet(24622/sp,0x657BA6,camera);
+neptune.init(
+    "{{url_for('static',filename='assets/2k_neptune.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_neptune_dark.png')}}",
+    pySvs.neptune,28.32*Math.PI/180,ringSprite
+);
+scene.add(neptune);
+planetMeshes['neptune'].mesh = neptune;
+
+const pluto = new Planet(1188.3/sp,0xced2d9,camera);
+pluto.init(
+    "{{url_for('static',filename='assets/2k_pluto.jpeg')}}",
+    "{{url_for('static',filename='assets/2k_pluto_dark.png')}}",
+    pySvs.pluto,120*Math.PI/180,ringSprite
+);
+scene.add(pluto);
+planetMeshes['pluto'].mesh = pluto;
+
+
+// MORE PLANET DATA & RK4
+// ==================================================================================
+const tau = 2*Math.PI;
+const mercurySideral = tau/(1407.6*60*60);
+const venusSideral = tau/(-5832.5*60*60);
+const earthSideral = tau/(23.9*60*60);
+const moonSideral = tau/(655.7*60*60);
+const marsSideral = tau/(24.6*60*60);
+const jupiterSideral = tau/(9.9*60*60);
+const saturnSideral = tau/(10.7*60*60);
+const uranusSideral = tau/(-17.2*60*60);
+const neptuneSideral = tau/(16.1*60*60);
+const plutoSideral = tau/(153.3*60*60);
+
+// const masses = [
+//     1.989e30,  // Sun
+//     3.301e23,  // Mercury
+//     4.867e24,  // Venus
+//     5.972e24,  // Earth
+//     7.342e22,  // Moon
+//     6.417e23,  // Mars
+//     1.898e27,  // Jupiter
+//     5.683e26,  // Saturn
+//     8.681e25,  // Uranus
+//     1.024e26,  // Neptune
+//     1.309e22  // Pluto
+// ];
+
+const bodies = []
+bodies.push({
+    mass:1.989e30,
+    x:pySvs.sun[0],y:pySvs.sun[1],z:pySvs.sun[2],
+    vx:pySvs.sun[3],vy:pySvs.sun[4],vz:pySvs.sun[5]
+    // sun
+})
+bodies.push({
+    mass:3.301e23,
+    x:pySvs.mercury[0],y:pySvs.mercury[1],z:pySvs.mercury[2],
+    vx:pySvs.mercury[3],vy:pySvs.mercury[4],vz:pySvs.mercury[5]
+    // mercury
+})
+bodies.push({
+    mass:4.867e24,
+    x:pySvs.venus[0],y:pySvs.venus[1],z:pySvs.venus[2],
+    vx:pySvs.venus[3],vy:pySvs.venus[4],vz:pySvs.venus[5]
+    // venus
+})
+bodies.push({
+    mass:5.972e24,
+    x:pySvs.earth[0],y:pySvs.earth[1],z:pySvs.earth[2],
+    vx:pySvs.earth[3],vy:pySvs.earth[4],vz:pySvs.earth[5]
+    // earth
+})
+bodies.push({
+    mass:7.342e22,
+    x:pySvs.moon[0],y:pySvs.moon[1],z:pySvs.moon[2],
+    vx:pySvs.moon[3],vy:pySvs.moon[4],vz:pySvs.moon[5]
+    // moon
+})
+bodies.push({
+    mass:6.417e23,
+    x:pySvs.mars[0],y:pySvs.mars[1],z:pySvs.mars[2],
+    vx:pySvs.mars[3],vy:pySvs.mars[4],vz:pySvs.mars[5]
+    // mars
+})
+bodies.push({
+    mass:1.898e27,
+    x:pySvs.jupiter[0],y:pySvs.jupiter[1],z:pySvs.jupiter[2],
+    vx:pySvs.jupiter[3],vy:pySvs.jupiter[4],vz:pySvs.jupiter[5]
+    // jupiter
+})
+bodies.push({
+    mass:5.683e26,
+    x:pySvs.saturn[0],y:pySvs.saturn[1],z:pySvs.saturn[2],
+    vx:pySvs.saturn[3],vy:pySvs.saturn[4],vz:pySvs.saturn[5]
+    // saturn
+})
+bodies.push({
+    mass:8.681e25,
+    x:pySvs.uranus[0],y:pySvs.uranus[1],z:pySvs.uranus[2],
+    vx:pySvs.uranus[3],vy:pySvs.uranus[4],vz:pySvs.uranus[5]
+    // uranus
+})
+bodies.push({
+    mass:1.024e26,
+    x:pySvs.neptune[0],y:pySvs.neptune[1],z:pySvs.neptune[2],
+    vx:pySvs.neptune[3],vy:pySvs.neptune[4],vz:pySvs.neptune[5]
+    // neptune
+})
+bodies.push({
+    mass:1.309e22 * pyData.pluto_scale,
+    x:pySvs.pluto[0],y:pySvs.pluto[1],z:pySvs.pluto[2],
+    vx:pySvs.pluto[3],vy:pySvs.pluto[4],vz:pySvs.pluto[5]
+    // pluto
+})
+
+
+
+
+
+// let target = earth.position;
+// camera.position.copy(earth.position);
+// camera.position.normalize().multiplyScalar(.05).add(earth.position);
+
+let target = earth.position;
+camera.position.copy(earth.position);
+camera.position.normalize().multiplyScalar(.005).add(earth.position);
+camera.position.y += .001;
+controls.update();
+
+
+
+// STARS
+// ==================================================================================
+const assignSRGB = ( texture ) => {texture.colorSpace = SRGBColorSpace;};
+const starSprite = new TextureLoader().load( "{{url_for('static',filename='assets/eyes_nasa.png')}}", assignSRGB);
+function randomGaussian(mean = 0, standardDeviation = 1) {
+    const u1 = Math.random();
+    const u2 = Math.random();
+    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+    return z0 * standardDeviation + mean;
+}
+const stars = new StarPoints( 10000, starSprite );
+scene.add(stars);
+
+// LINE ORBITS
+// ==================================================================================
+class DynOrbits extends Line {
+    constructor( N, color=0xffb6c1 ) {
+        super();
+        const geomOrbit = new BufferGeometry();
+        geomOrbit.setAttribute( 'position', new BufferAttribute( new Float32Array( N  * 3 ), 3 ) );
+        const materialOrbit = new LineBasicMaterial( { color: color } );
+        this.geometry = geomOrbit;
+        this.material = materialOrbit;
+        this.N = N;
+        this.positions = this.geometry.attributes.position.array;
+        this.positions.frustumCulled = false;
+        // this.computeLineDistances();
+    }
+    setLine( data ) {
+        for (let i = 0; i < this.N; i++)
+        {
+            const idx = i*3;
+            this.positions[ idx   ] = data[0][i];
+            this.positions[ idx+1 ] = data[1][i];
+            this.positions[ idx+2 ] = data[2][i];
+
+        }
+        this.geometry.attributes.position.needsUpdate = true;
+    }
+}
+
+
+const bodies2 = []
+bodies2.push({
+    mass:1.989e30,
+    x:pySvs.sun[0],y:pySvs.sun[1],z:pySvs.sun[2],
+    vx:pySvs.sun[3],vy:pySvs.sun[4],vz:pySvs.sun[5]
+    // sun
+})
+bodies2.push({
+    mass:3.301e23,
+    x:pySvs.mercury[0],y:pySvs.mercury[1],z:pySvs.mercury[2],
+    vx:pySvs.mercury[3],vy:pySvs.mercury[4],vz:pySvs.mercury[5]
+    // mercury
+})
+bodies2.push({
+    mass:4.867e24,
+    x:pySvs.venus[0],y:pySvs.venus[1],z:pySvs.venus[2],
+    vx:pySvs.venus[3],vy:pySvs.venus[4],vz:pySvs.venus[5]
+    // venus
+})
+bodies2.push({
+    mass:5.972e24,
+    x:pySvs.earth[0],y:pySvs.earth[1],z:pySvs.earth[2],
+    vx:pySvs.earth[3],vy:pySvs.earth[4],vz:pySvs.earth[5]
+    // earth
+})
+bodies2.push({
+    mass:7.342e22,
+    x:pySvs.moon[0],y:pySvs.moon[1],z:pySvs.moon[2],
+    vx:pySvs.moon[3],vy:pySvs.moon[4],vz:pySvs.moon[5]
+    // moon
+})
+bodies2.push({
+    mass:6.417e23,
+    x:pySvs.mars[0],y:pySvs.mars[1],z:pySvs.mars[2],
+    vx:pySvs.mars[3],vy:pySvs.mars[4],vz:pySvs.mars[5]
+    // mars
+})
+bodies2.push({
+    mass:1.898e27,
+    x:pySvs.jupiter[0],y:pySvs.jupiter[1],z:pySvs.jupiter[2],
+    vx:pySvs.jupiter[3],vy:pySvs.jupiter[4],vz:pySvs.jupiter[5]
+    // jupiter
+})
+bodies2.push({
+    mass:5.683e26,
+    x:pySvs.saturn[0],y:pySvs.saturn[1],z:pySvs.saturn[2],
+    vx:pySvs.saturn[3],vy:pySvs.saturn[4],vz:pySvs.saturn[5]
+    // saturn
+})
+bodies2.push({
+    mass:8.681e25,
+    x:pySvs.uranus[0],y:pySvs.uranus[1],z:pySvs.uranus[2],
+    vx:pySvs.uranus[3],vy:pySvs.uranus[4],vz:pySvs.uranus[5]
+    // uranus
+})
+bodies2.push({
+    mass:1.024e26,
+    x:pySvs.neptune[0],y:pySvs.neptune[1],z:pySvs.neptune[2],
+    vx:pySvs.neptune[3],vy:pySvs.neptune[4],vz:pySvs.neptune[5]
+    // neptune
+})
+bodies2.push({
+    mass:1.309e22 * pyData.pluto_scale,
+    x:pySvs.pluto[0],y:pySvs.pluto[1],z:pySvs.pluto[2],
+    vx:pySvs.pluto[3],vy:pySvs.pluto[4],vz:pySvs.pluto[5]
+    // pluto
+})
+
+let otime = 0;
+const mercuryOrbit = [[],[],[]];
+const venusOrbit = [[],[],[]];
+const earthOrbit = [[],[],[]];
+const moonOrbit = [[],[],[]];
+const marsOrbit = [[],[],[]];
+const jupiterOrbit = [[],[],[]];
+const saturnOrbit = [[],[],[]];
+const uranusOrbit = [[],[],[]];
+const neptuneOrbit = [[],[],[]];
+const plutoOrbit = [[],[],[]];
+const sunOrbit = [[],[],[]];
+
+for(let i=0;i<2000;i+=1)
+{
+
+    mercuryOrbit[0].push(bodies2[1].x);
+    mercuryOrbit[1].push(bodies2[1].y);
+    mercuryOrbit[2].push(bodies2[1].z);
+
+    venusOrbit[0].push(bodies2[2].x);
+    venusOrbit[1].push(bodies2[2].y);
+    venusOrbit[2].push(bodies2[2].z);
+
+    earthOrbit[0].push(bodies2[3].x);
+    earthOrbit[1].push(bodies2[3].y);
+    earthOrbit[2].push(bodies2[3].z);
+
+    moonOrbit[0].push(bodies2[4].x);
+    moonOrbit[1].push(bodies2[4].y);
+    moonOrbit[2].push(bodies2[4].z);
+
+    marsOrbit[0].push(bodies2[5].x);
+    marsOrbit[1].push(bodies2[5].y);
+    marsOrbit[2].push(bodies2[5].z);
+
+    jupiterOrbit[0].push(bodies2[6].x);
+    jupiterOrbit[1].push(bodies2[6].y);
+    jupiterOrbit[2].push(bodies2[6].z);
+
+    saturnOrbit[0].push(bodies2[7].x);
+    saturnOrbit[1].push(bodies2[7].y);
+    saturnOrbit[2].push(bodies2[7].z);
+
+    uranusOrbit[0].push(bodies2[8].x);
+    uranusOrbit[1].push(bodies2[8].y);
+    uranusOrbit[2].push(bodies2[8].z);
+
+    neptuneOrbit[0].push(bodies2[9].x);
+    neptuneOrbit[1].push(bodies2[9].y);
+    neptuneOrbit[2].push(bodies2[9].z);
+
+    plutoOrbit[0].push(bodies2[10].x);
+    plutoOrbit[1].push(bodies2[10].y);
+    plutoOrbit[2].push(bodies2[10].z);
+
+    sunOrbit[0].push(bodies2[0].x);
+    sunOrbit[1].push(bodies2[0].y);
+    sunOrbit[2].push(bodies2[0].z);
+
+    for(let j=0;j<32;j+=1)
+    {
+        rungeKutta4(bodies2, 1000);
+        otime += 1000;
+    }
+}
+console.log(otime/3.154e7);
+
+const o1 = new DynOrbits(Math.floor(.5*2000*0.239),mercury.colorHex); // 88/365  days to orbit, cut it off 
+// o1.setLine(futureOrbits.mercury);
+o1.setLine(mercuryOrbit);
+scene.add(o1);
+
+const o2 = new DynOrbits(Math.floor(.5*2000*0.61),venus.colorHex);  
+// o2.setLine(futureOrbits.venus);
+o2.setLine(venusOrbit);
+scene.add(o2);
+
+const o3 = new DynOrbits(.495*2000,0x6b93d6);
+// o3.setLine(futureOrbits.earth);
+o3.setLine(earthOrbit);
+scene.add(o3);
+
+const o4 = new DynOrbits(.495*2000,moon.colorHex);
+// o4.setLine(futureOrbits.moon);
+o4.setLine(moonOrbit);
+scene.add(o4);
+
+const o5 = new DynOrbits(Math.floor(.5*2000*1.86),mars.colorHex);
+// o5.setLine(futureOrbits.mars);
+o5.setLine(marsOrbit);
+scene.add(o5);
+
+const o6 = new DynOrbits(2000,jupiter.colorHex);
+// o6.setLine(futureOrbits.jupiter);
+o6.setLine(jupiterOrbit);
+scene.add(o6);
+
+const o7 = new DynOrbits(2000,saturn.colorHex);
+// o7.setLine(futureOrbits.saturn);
+o7.setLine(saturnOrbit);
+scene.add(o7);
+
+const o8 = new DynOrbits(2000,uranus.colorHex);
+// o8.setLine(futureOrbits.uranus);
+o8.setLine(uranusOrbit);
+scene.add(o8);
+
+const o9 = new DynOrbits(2000,neptune.colorHex);
+// o9.setLine(futureOrbits.neptune);
+o9.setLine(neptuneOrbit);
+scene.add(o9);
+
+const o10 = new DynOrbits(2000,pluto.colorHex);
+// o10.setLine(futureOrbits.pluto);
+o10.setLine(plutoOrbit);
+scene.add(o10);
+
+
+// ANIMATE
+// ==================================================================================
+const camDistanceText = document.getElementById('cam-distance');
+const cam2target = new Vector3();
+const utctime = document.getElementById("utctime");
+utctime.textContent = Math.floor(pySvs.timestamp);
+let spaceTime = parseInt(pySvs.timestamp);
+const dtSimScale = pyData.dt_sim_scale;
+
+function animate(){
+
+    const animDt = clock.getDelta();
+    stars.twinkle(animDt);
+    const time = clock.getElapsedTime();
+
+    const dt = dtSimScale*animDt;
+    spaceTime += dt;
+    utctime.textContent = Math.floor(spaceTime);
+
+    cam2target.copy(camera.position);
+    const canDist = cam2target.distanceTo(target);
+    camDistanceText.textContent = Math.floor(canDist * 1e5)*1e2;
+
+    rungeKutta4(bodies, dt);
+    mercury.updateFromRK4(bodies[1],dt*mercurySideral);
+    venus.updateFromRK4(bodies[2],dt*venusSideral);
+    moon.updateFromRK4(bodies[4],dt*moonSideral);
+    mars.updateFromRK4(bodies[5],dt*marsSideral);
+    jupiter.updateFromRK4(bodies[6],dt*jupiterSideral);
+    saturn.updateFromRK4(bodies[7],dt*saturnSideral);
+    uranus.updateFromRK4(bodies[8],dt*uranusSideral);
+    neptune.updateFromRK4(bodies[9],dt*neptuneSideral);
+    pluto.updateFromRK4(bodies[10],dt*plutoSideral);
+
+    earth.setPosition(bodies[3].x,bodies[3].y,bodies[3].z);
+    earth.rotation.y += dt*earthSideral;
+    earth.updateAllRotations();
+    earth.setSunOrigin( );
+
+    controls.target.copy( target );
+    controls.update();
+    stats.update();
+    requestAnimationFrame( animate )
+    renderer.render( scene, camera );
+    labelRenderer.render( scene, camera );
+};
+animate();
+
+// EVENT LISTENER(S)
+// ==================================================================================
+window.addEventListener( 'resize', onWindowResize );
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// FUN FACTS
+// ==================================================================================
+const planetFacts = {
+    mercury: [
+        "It’s not known who discovered Mercury",
+        "Up until 1965 it was thought that the same side of Mercury constantly faced the Sun",
+        "Thirteen times a century Mercury can be observed from the Earth passing across the Sun's face",
+        "Mercury is the second densest planet"
+    ],
+    venus: [
+        "A day on Venus lasts longer than a year",
+        "Venus rotates in the opposite direction",
+        "Pressure felt on Venus’ surface is equivalent to that deep beneath the sea on Earth",
+        "The same side of Venus always faces the Earth when at their closest (possibly due to the Earth’s gravitational influence)",
+        "Venus doesn’t have any moons, and we aren’t sure why"
+    ],
+    earth: [
+        "Earth is the densest planet",
+        "Earth’s rotation is gradually slowing",
+        "Earth’s satellite (the Moon) is the largest satellite of any planet in our solar system"
+    ],
+    moon: [
+        "The Moon is the second densest satellite",
+        "The Moon has quakes - not called earthquakes but moonquakes",
+        "The Moon is drifting away from the Earth",
+        "During totality, the moon blocks out the sun so precisely, that only the sun's corona (outer atmosphere) is visible. There is no reason this effect should happen with the precision it does"
+    ],
+    mars: [
+        "Mars is the second smallest planet in the solar system",
+        "Mars and Earth have approximately the same total land area (because of Earth's water)",
+        "One day Mars will have a ring, Mars’ largest moon Phobos will be torn apart by gravitational forces",
+        "Sunsets on Mars are blue"
+    ],
+    jupiter: [
+        "Jupiter is two and a half times more massive than all the other planets in the solar system combined",
+        "Jupiter has the shortest day of all the planets",
+        "Jupiter's Great Red Spot is red due to an unknown chemical composition"
+    ],
+    saturn: [
+        "Saturn is the most distant planet that can be seen with the naked eye",
+        "Saturn is the flattest planet due to its low density and fast rotation",
+        "Saturn has 146 moons"
+    ],
+    uranus: [
+        "Uranus is the first planet discovered with the use of a telescope",
+        "Uranus has an axial tilt of 98 degrees. It is often described as “rolling around the Sun on its side.”",
+        "Uranus hits the coldest temperatures of any planet",
+        "Only one spacecraft has flown by Uranus"
+    ],
+    neptune: [
+        "Neptune was first observed in 1846. Its position was first determined using mathematical predictions",
+        "Only one spacecraft has flown by Neptune",
+        "Neptune has supersonic winds"
+    ],
+    pluto: [
+        "Pluto had not completed a full orbit around the Sun since its discovery before it was reclassified as not a planet",
+        "Pluto significantly impacted the definition of a planet",
+        "Pluto has five known moons",
+        "Pluto is usually farther away from the Sun than Neptune, but sometimes it comes closer"
+    ]
+};
+
+function getRandomFact(planetName) {
+    const facts = planetFacts[planetName];
+    if (!facts) {return `No facts available for the planet "${planetName}".`;}
+    const randomIndex = Math.floor(Math.random() * facts.length);
+    return facts[randomIndex];
+}
+
+const textFacts = document.getElementById('text-facts');
+document.getElementById('planetSelect').addEventListener('change', function () {
+    console.log(`You selected: ${this.value}`);
+    const key = this.value.toLowerCase();
+    target = planetMeshes[key].mesh.position;
+    textFacts.textContent = getRandomFact(key);
+});
+
+// THREEJS CSS LABELS
+// ==================================================================================
+function createLabelCSS(name,mesh) {
+    const Div = document.createElement( 'div' );
+    Div.className = 'markerLabel';
+    Div.textContent = name;
+    const Label = new CSS2DObject( Div );
+    Label.position.set( mesh.r*1.25, mesh.r*1.25, 0 );
+    Label.center.set( 0, 1 );
+    mesh.add( Label );
+    Label.layers.set( 0 );
+    Div.addEventListener("pointerdown", event => {
+        const key = name.toLowerCase();
+        target = planetMeshes[key].mesh.position;
+        textFacts.textContent = getRandomFact(key);
+
+    })
+};
+
+createLabelCSS("Mercury",mercury);
+createLabelCSS("Venus",venus);
+createLabelCSS("Moon",moon);
+createLabelCSS("Mars",mars);
+createLabelCSS("Jupiter",jupiter);
+createLabelCSS("Saturn",saturn);
+createLabelCSS("Uranus",uranus);
+createLabelCSS("Neptune",neptune);
+createLabelCSS("Pluto",pluto);
+
+const earthDiv = document.createElement( 'div' );
+earthDiv.className = 'markerLabel';
+earthDiv.textContent = "Earf";
+const earthLabel = new CSS2DObject( earthDiv );
+earthLabel.position.set( EARHRADIUS*1.25, EARHRADIUS*1.25, 0 );
+earthLabel.center.set( 0, 1 );
+earth.add( earthLabel );
+earthLabel.layers.set( 0 );
+earthDiv.addEventListener("pointerdown", event => {
+    const key = "earth";
+    target = planetMeshes[key].mesh.position;
+    textFacts.textContent = getRandomFact(key);
+
+})
+
+</script>
+    </body>
+</html>
