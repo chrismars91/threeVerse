@@ -396,15 +396,10 @@ bodies.push({
 
 
 
-// let target = earth.position;
-// camera.position.copy(earth.position);
-// camera.position.normalize().multiplyScalar(.05).add(earth.position);
-
 let target = earth.position;
 camera.position.copy(earth.position);
-camera.position.normalize().multiplyScalar(.005).add(earth.position);
+camera.position.normalize().multiplyScalar(.05).add(earth.position);
 camera.position.y += .001;
-controls.update();
 
 
 
