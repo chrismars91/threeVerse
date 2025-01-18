@@ -98,7 +98,7 @@ canvas {
 const pyData = {{ pyData|safe }};
 const pySvs = pyData.svs;
 // const futureOrbits = pyData.orbits;
-// console.log(planetMeshes);
+console.log(pyData);
 // console.log(futureOrbits);
 
 // BASIC SETUP
@@ -195,6 +195,7 @@ earth.loadTextures(
 scene.add( earth );
 earth.setPosition(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
 earth.setSunOrigin();
+earth.rotation.y = -pySvs.ecliptic_earth_rot;
 earth.rotation.x = -23.44*Math.PI/180;
 planetMeshes['earth'].mesh = earth;
 const arrowHelper = new ArrowHelper( 

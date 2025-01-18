@@ -3,7 +3,7 @@
 
 
 const textureLoader = new TextureLoader(); 
-const EARHRADIUS = 6371.0/10000000;
+const EARHRADIUS = 6371.0/1000000;
 const atmosphere = {
     Kr: 0.0025,
     Km: 0.0010,
