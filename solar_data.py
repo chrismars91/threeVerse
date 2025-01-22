@@ -2,7 +2,7 @@ from skyfield.api import load
 from datetime import datetime
 import numpy as np
 from skyfield.framelib import ecliptic_frame
-from get_earth_rot_ecliptic import ecliptic_celestial_north_rotation
+from from_Earth import get_sun_and_sun_norm_from_ecef
 
 """
     This Python file will grab the state vectors, positions, and velocities of the planets.
@@ -49,5 +49,5 @@ def get_solar_state_vectors(scale=1.0):
         'uranus': get_body_state_vector('uranus BARYCENTER', timenow, scale),
         'neptune': get_body_state_vector('neptune BARYCENTER', timenow, scale),
         'pluto': get_body_state_vector('pluto BARYCENTER', timenow, scale),
-        'ecliptic_earth_rot': ecliptic_celestial_north_rotation(timenow)
+        'earth_norms': get_sun_and_sun_norm_from_ecef(timenow)
     }

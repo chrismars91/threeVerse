@@ -195,8 +195,62 @@ earth.loadTextures(
 scene.add( earth );
 earth.setPosition(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
 earth.setSunOrigin();
-earth.rotation.y = -pySvs.ecliptic_earth_rot;
-earth.rotation.x = -23.44*Math.PI/180;
+
+
+/*
+
+A messy attempt to orient the Earth correctly with respect to the Sun and Moon.
+
+
+We calculate the Sun's latitude, longitude, and XYZ coordinates in an ECEF frame. Then, we rotate the Earth so that the ECEF vector aligns with its ECI Sun vector using a quaternion. This aligns the vector, but now the Earth is incorrectly rotated with respect to the ECI Sun vector. Next, we use the Moon's ECI position to rotate the Earth around the ECI Sun vector until its potential Moon latitude, longitude, and XYZ coordinates are as close as possible.
+
+*/
+
+const sunFromEarth = new Vector3(
+    pySvs.sun[0]-pySvs.earth[0],
+    pySvs.sun[1]-pySvs.earth[1],
+    pySvs.sun[2]-pySvs.earth[2]).normalize();
+const sunEcef = pyData.svs.earth_norms.sun;
+const moonEcef = pyData.svs.earth_norms.moon;
+let rotCorrection = 1; // earth may now be flipped :|
+const quaternionPointEarth = new Quaternion();
+quaternionPointEarth.setFromUnitVectors( 
+    new Vector3(sunEcef[0],sunEcef[1],sunEcef[2]),
+    sunFromEarth
+);
+earth.applyQuaternion( quaternionPointEarth );
+const dummyEarth = new Group();
+dummyEarth.position.copy(earth.position);
+dummyEarth.applyQuaternion( quaternionPointEarth );
+const dummyPos = new Object3D();
+dummyPos.position.set(moonEcef[0],moonEcef[1],moonEcef[2]);
+dummyEarth.add( dummyPos );
+const moonR = new Vector3(pySvs.moon[0],pySvs.moon[1],pySvs.moon[2]).sub(earth.position);
+moonR.normalize().multiplyScalar(EARHRADIUS);
+let minDistanceMoonLatLon = 1000000000000;
+let angelMoonCorrection = 0;
+const _moonSpinVect = new Vector3();
+dummyPos.getWorldPosition(_moonSpinVect);
+if (_moonSpinVect.y < 0){rotCorrection=-1;}
+for(let i=0;i<2*Math.PI;i+=.01)
+{
+    dummyEarth.rotateOnWorldAxis(sunFromEarth,.01);
+    dummyPos.getWorldPosition(_moonSpinVect);
+    _moonSpinVect.sub(earth.position);
+    if (moonR.distanceToSquared(_moonSpinVect) < minDistanceMoonLatLon)
+    {
+        minDistanceMoonLatLon = moonR.distanceToSquared(_moonSpinVect);
+        angelMoonCorrection = i;
+    }
+}
+earth.rotateOnWorldAxis(sunFromEarth,angelMoonCorrection);
+// earth.rotation.x = -0.4090358039298369;
+/*
+
+    Back to the regularly scheduled program program
+
+*/
+
 planetMeshes['earth'].mesh = earth;
 const arrowHelper = new ArrowHelper( 
     new Vector3( 0, 1, 0 ), 
@@ -393,14 +447,10 @@ bodies.push({
 })
 
 
-
-
-
 let target = earth.position;
 camera.position.copy(earth.position);
 camera.position.normalize().multiplyScalar(.05).add(earth.position);
 camera.position.y += .001;
-
 
 
 // STARS
@@ -667,7 +717,7 @@ function animate(){
     pluto.updateFromRK4(bodies[10],dt*plutoSideral);
 
     earth.setPosition(bodies[3].x,bodies[3].y,bodies[3].z);
-    earth.rotation.y += dt*earthSideral;
+    earth.rotation.y += -dt*earthSideral*rotCorrection;
     earth.updateAllRotations();
     earth.setSunOrigin( );
 

@@ -18,9 +18,9 @@ def index():
         pluto_scale = clamp(abs(int(request.args.get('pluto_scale', 1.0))), 1.0, 10000000000)
     except ValueError:
         pass
-    dt_sim_scale = 100.0
+    dt_sim_scale = .001
     try:
-        dt_sim_scale = clamp(abs(int(request.args.get('dt_sim_scale', 100.0))), 0.1, 1000000.0)
+        dt_sim_scale = clamp(abs(int(request.args.get('dt_sim_scale', 100.0))), 0.00001, 1000000.0)
     except ValueError:
         pass
     svs = get_solar_state_vectors(1e-7)
