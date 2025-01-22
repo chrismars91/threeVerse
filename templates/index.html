@@ -202,7 +202,11 @@ earth.setSunOrigin();
 A messy attempt to orient the Earth correctly with respect to the Sun and Moon.
 
 
-We calculate the Sun's latitude, longitude, and XYZ coordinates in an ECEF frame. Then, we rotate the Earth so that the ECEF vector aligns with its ECI Sun vector using a quaternion. This aligns the vector, but now the Earth is incorrectly rotated with respect to the ECI Sun vector. Next, we use the Moon's ECI position to rotate the Earth around the ECI Sun vector until its potential Moon latitude, longitude, and XYZ coordinates are as close as possible.
+We calculate the Sun's latitude, longitude, and XYZ coordinates in an ECEF frame.
+Then, we rotate the Earth so that the ECEF vector aligns with its ECI Sun vector using a quaternion. 
+This aligns the vector, but now the Earth is incorrectly rotated with respect to the ECI Sun vector. 
+Next, we use the Moon's ECI position to rotate the Earth around the ECI Sun vector 
+until its potential Moon latitude, longitude, and XYZ coordinates are as close as possible.
 
 */
 
