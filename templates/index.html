@@ -305,24 +305,9 @@ saturn.init(
 scene.add(saturn);
 planetMeshes['saturn'].mesh = saturn;
 
-const rstart = saturn.r * 1.3;
-const rend = saturn.r + rstart;
-const rmid = rstart + (rend-rstart)/2;
-const satring = "{{url_for('static',filename='assets/2k_saturn_ring_alpha.png')}}";
-const satringGeo = new RingGeometry(rstart, rend, 128);
-const  pos = satringGeo.attributes.position;
-const  satv = new Vector3();
-for (let i = 0; i < pos.count; i++){
-    satv.fromBufferAttribute(pos, i);
-    satringGeo.attributes.uv.setXY(i, satv.length() < rmid ? 0 : 1, 1); // 5<6>7
-}
-const satringMat = new MeshBasicMaterial({
-    map: textureLoader.load(satring),
-    color: 0xffffff,
-    side: DoubleSide,
-    transparent: true
-});
-const saturnRing = new Mesh(satringGeo, satringMat);
+
+const satring_path = "{{url_for('static',filename='assets/2k_saturn_ring_alpha.png')}}";
+const saturnRing = new SaturnRing(saturn.r, textureLoader.load(satring_path));
 saturnRing.rotation.x = Math.PI/2*95;
 saturn.add(saturnRing);
 
@@ -716,6 +701,7 @@ function animate(){
     mars.updateFromRK4(bodies[5],dt*marsSideral);
     jupiter.updateFromRK4(bodies[6],dt*jupiterSideral);
     saturn.updateFromRK4(bodies[7],dt*saturnSideral);
+    saturnRing.updateSunDirection(saturn.sunvect);
     uranus.updateFromRK4(bodies[8],dt*uranusSideral);
     neptune.updateFromRK4(bodies[9],dt*neptuneSideral);
     pluto.updateFromRK4(bodies[10],dt*plutoSideral);

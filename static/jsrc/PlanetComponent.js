@@ -169,3 +169,66 @@ class Planet extends Mesh {
     }
 }
 
+
+class SaturnRing extends Mesh {
+    constructor(saturnRadius, ringTexture) {
+        const rstart = saturnRadius * 1.3;
+        const rend = saturnRadius + rstart;
+        const rmid = rstart + (rend - rstart) / 2;
+        const ringGeo = new RingGeometry(rstart, rend, 128);
+        const pos = ringGeo.attributes.position;
+        const satv = new Vector3();
+        for (let i = 0; i < pos.count; i++) {
+            satv.fromBufferAttribute(pos, i);
+            ringGeo.attributes.uv.setXY(i, satv.length() < rmid ? 0 : 1, 1);
+        }
+        const ringMaterial = new ShaderMaterial({
+            uniforms: {
+                ringTexture: { value: ringTexture },
+                sunDirection: { value: new Vector3() },
+                saturnRadius: { value: saturnRadius }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                varying vec3 vWorldPosition;
+                varying vec3 vSaturnCenter;
+                void main() {
+                    vUv = uv;
+                    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                    vSaturnCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D ringTexture;
+                uniform vec3 sunDirection;
+                uniform float saturnRadius;
+                varying vec2 vUv;
+                varying vec3 vWorldPosition;
+                varying vec3 vSaturnCenter;
+                void main() {
+                    vec4 ringColor = texture2D(ringTexture, vUv);
+                    vec3 sunDir = normalize(sunDirection);
+                    vec3 saturnToRing = vWorldPosition - vSaturnCenter;
+                    float projection = dot(saturnToRing, sunDir);
+                    float shadowFactor = 1.0;
+                    if (projection < 0.0) {
+                        vec3 perpendicular = saturnToRing - projection * sunDir;
+                        float distance = length(perpendicular);
+                        shadowFactor = smoothstep(saturnRadius * 0.9, saturnRadius * 1.1, distance);
+                    }
+                    vec3 finalColor = mix(ringColor.rgb * 0.2, ringColor.rgb, shadowFactor);
+                    gl_FragColor = vec4(finalColor, ringColor.a);
+                }
+            `,
+            side: DoubleSide,
+            transparent: true
+        });
+        super(ringGeo, ringMaterial);
+    }
+    
+    updateSunDirection(sunVector) {
+        this.material.uniforms.sunDirection.value.copy(sunVector);
+    }
+}
+
