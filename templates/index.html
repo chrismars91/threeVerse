@@ -707,7 +707,7 @@ function animate(){
     pluto.updateFromRK4(bodies[10],dt*plutoSideral);
 
     earth.setPosition(bodies[3].x,bodies[3].y,bodies[3].z);
-    earth.rotation.y += -dt*earthSideral*rotCorrection;
+    earth.rotation.y += dt*earthSideral*rotCorrection;
     earth.updateAllRotations();
     earth.setSunOrigin( );
 
