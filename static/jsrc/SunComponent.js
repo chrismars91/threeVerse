@@ -536,7 +536,7 @@ class StarPoints extends Points {
         {
             for(let i=0;i<this.N;i+=1)
             {
-                const r = Math.random()*3000;
+                const r = Math.random()*2500;
                 if (r < 1){this.visibilityArray[i]=0;}
                 else{this.visibilityArray[i]=1;}
                 this.time = 0;
