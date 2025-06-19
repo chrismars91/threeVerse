@@ -197,17 +197,57 @@ scene.add( earth );
 earth.setPosition(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
 earth.setSunOrigin();
 /*
-    Trying to orient the Earth correctly relative to the Sun and Moon.
-    From the Python API, we get the Sun's longitude in radians.
-    We can figure out where the Sun is hitting the Earth in the XZ plane, 
-    then rotate the Earth so that the Sun is hitting longitude = 0.
-    After that, we rotate the Earth again so (hopefully) 
-    the Sun is hitting the correct latitude in the XZ plane, since lon = 0.
-¯\_(ツ)_/¯
+    Trying my best to orient the Earth correctly relative to the Sun and Moon.
+    ¯\_(ツ)_/¯
+
+    First, rotate Earth on its X-axis. This guarantees proper tilt since its X-axis is in the ecliptic plane.
+
+    Next, find the current incorrect sun projection longitude by finding where the sun vector intersects Earth.
+
+    Rotate Earth on its world Y-axis by the incorrect sun longitude. This gives Earth the correct tilt and aligns longitude = 0 directly toward the sun. Rotate Earth on its world Y-axis by the correct amount via the pySvs API. And rotate it correctly using the negative value, making Earth "face" the correct direction.
+
+    Debug raycast to confirm approximate latitude and longitude.
+    Confirm values here: https://orbital-api.com/planetLatLonDist?planet=Sun
+
 */
-earth.rotation.x = -0.4090358039298369;
-const rotXzPlaneToSun = Math.atan2(pySvs.earth[1], pySvs.earth[0]);
-earth.rotation.y = rotXzPlaneToSun+pySvs.earth_sun_theta;
+
+earth.rotation.x = -0.4090358039298369; //~tilt of 23 degrees
+const sunWorldPos = new Vector3(pySvs.sun[0], pySvs.sun[1], pySvs.sun[2]);
+sun.getWorldPosition(sunWorldPos);
+const earthWorldPos = new Vector3(pySvs.earth[0], pySvs.earth[1], pySvs.earth[2]);
+earth.getWorldPosition(earthWorldPos);
+const sunDirectionLocal = new Vector3().subVectors(sunWorldPos, earthWorldPos).normalize();
+earth.worldToLocal(sunDirectionLocal.add(earthWorldPos));
+const lonrad = Math.atan2(-sunDirectionLocal.z, sunDirectionLocal.x);
+const normalizedLonRad = ((lonrad + Math.PI) % (2 * Math.PI)) - Math.PI;
+console.log("Actual sun lon:", pySvs.earth_sun_theta * 180 / Math.PI);
+earth.rotation.y = normalizedLonRad - pySvs.earth_sun_theta
+function checkEarthSolarAlignment() {
+    const sphere = new Mesh(new SphereGeometry(EARHRADIUS, 64, 64), new MeshBasicMaterial());
+    sphere.position.copy(earth.position);
+    sphere.quaternion.copy(earth.quaternion);
+    sphere.scale.copy(earth.scale);
+    sphere.updateMatrixWorld();
+    const origin = new Vector3(pySvs.sun[0], pySvs.sun[1], pySvs.sun[2]);
+    const direction = new Vector3().subVectors(earth.position, origin).normalize();
+    const raycaster = new Raycaster(origin, direction);
+    const intersects = raycaster.intersectObject(sphere, true);
+    if (intersects.length > 0) {
+      const point = intersects[0].point;
+      const localPoint = point.clone().sub(earth.position)
+                                    .applyQuaternion(earth.quaternion.clone().invert());
+      const x = localPoint.x;
+      const y = localPoint.y;
+      const z = localPoint.z;
+      const lat = MathUtils.radToDeg(Math.asin(y / EARHRADIUS));
+      const lon = MathUtils.radToDeg(Math.atan2(-z, x));
+      console.log(`Model Sun Latitude: ${lat.toFixed(2)}°, Model Sun Longitude: ${lon.toFixed(2)}°`);
+    } else {
+      console.log("No intersection");
+    }
+}
+checkEarthSolarAlignment();
+
 /*
 
     Back to the regularly scheduled program program
@@ -517,7 +557,6 @@ bodies2.push({
     // pluto
 })
 
-let otime = 0;
 const mercuryOrbit = [[],[],[]];
 const venusOrbit = [[],[],[]];
 const earthOrbit = [[],[],[]];
@@ -580,10 +619,8 @@ for(let i=0;i<2000;i+=1)
     for(let j=0;j<32;j+=1)
     {
         rungeKutta4(bodies2, 1000);
-        otime += 1000;
     }
 }
-console.log(otime/3.154e7);
 
 const o1 = new DynOrbits(Math.floor(.5*2000*0.239),mercury.colorHex); // 88/365  days to orbit, cut it off 
 // o1.setLine(futureOrbits.mercury);
@@ -634,7 +671,6 @@ const o10 = new DynOrbits(2000,pluto.colorHex);
 // o10.setLine(futureOrbits.pluto);
 o10.setLine(plutoOrbit);
 scene.add(o10);
-
 
 // ANIMATE
 // ==================================================================================
