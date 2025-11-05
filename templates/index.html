@@ -191,10 +191,12 @@ planetMeshes['venus'].mesh = venus;
 
 const earth = new Earth3d(camera);
 earth.loadTextures(
-    pathDay="{{url_for('static',filename='assets/8081_earthmap10k.jpg')}}",
-    pathNight="{{url_for('static',filename='assets/8081_earthlights10k.jpg')}}");
+    '/static/assets/8081_earthmap10k.jpg',
+    '/static/assets/8081_earthlights10k.jpg',
+    '/static/assets/n_amer_clouds_8k.jpg'
+);
 scene.add( earth );
-earth.setPosition(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
+earth.setPositionXYZ(pySvs.earth[0],pySvs.earth[1],pySvs.earth[2])
 earth.setSunOrigin();
 /*
     Trying my best to orient the Earth correctly relative to the Sun and Moon.
@@ -707,8 +709,9 @@ function animate(){
     neptune.updateFromRK4(bodies[9],dt*neptuneSideral);
     pluto.updateFromRK4(bodies[10],dt*plutoSideral);
 
-    earth.setPosition(bodies[3].x,bodies[3].y,bodies[3].z);
+    earth.setPositionXYZ(bodies[3].x,bodies[3].y,bodies[3].z);
     earth.rotation.y += dt*earthSideral;
+    earth.ground.material.uniforms.time.value = time;
     earth.updateAllRotations();
     earth.setSunOrigin( );
 

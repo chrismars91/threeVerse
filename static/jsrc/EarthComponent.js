@@ -2,51 +2,6 @@
 //////// ----   Will Smith    ---- ////////
 
 
-const textureLoader = new TextureLoader(); 
-const EARHRADIUS = 6371.0/1000000;
-const atmosphere = {
-    Kr: 0.0025,
-    Km: 0.0010,
-    ESun: 20.0, //recnet change 20-->17
-    g: -0.950,
-    innerRadius: EARHRADIUS,
-    outerRadius: 1.025*EARHRADIUS,
-    wavelength: [0.650, 0.570, 0.475],
-    scaleDepth: 0.25,
-    mieScaleDepth: 0.1
-};
-
-const AtmUniforms = {
-    v3LightPosition: {type: "v3",value: new Vector3(1, 0, 0).normalize()},
-    cPs: {type: "v3",value: new Vector3(1, 0, 0)},
-    v3InvWavelength: {type: "v3",value: new Vector3(1 / Math.pow(atmosphere.wavelength[0], 4), 1 / Math.pow(atmosphere.wavelength[1], 4), 1 / Math.pow(atmosphere.wavelength[2], 4))},
-    fCameraHeight: {type: "f",value: 0},
-    fCameraHeight2: {type: "f",value: 0},
-    fInnerRadius: {type: "f",value: atmosphere.innerRadius},
-    fInnerRadius2: {type: "f",value: atmosphere.innerRadius * atmosphere.innerRadius},
-    fOuterRadius: {type: "f",value: atmosphere.outerRadius},
-    fOuterRadius2: {type: "f",value: atmosphere.outerRadius * atmosphere.outerRadius},
-    fKrESun: {type: "f",value: atmosphere.Kr * atmosphere.ESun},
-    fKmESun: {type: "f",value: atmosphere.Km * atmosphere.ESun},
-    fKr4PI: {type: "f",value: atmosphere.Kr * 4.0 * Math.PI},
-    fKm4PI: {type: "f",value: atmosphere.Km * 4.0 * Math.PI},
-    fScale: {type: "f",value: 1 / (atmosphere.outerRadius - atmosphere.innerRadius)},
-    fScaleDepth: {type: "f",value: atmosphere.scaleDepth},
-    fScaleOverScaleDepth: {type: "f",value: 1 / (atmosphere.outerRadius - atmosphere.innerRadius) / atmosphere.scaleDepth},
-    g: {type: "f",value: atmosphere.g},
-    g2: {type: "f",value: atmosphere.g * atmosphere.g},
-    nSamples: {type: "i",value: 3},
-    fSamples: {type: "f",value: 3.0},
-    tDisplacement: {type: "t",value: 0},
-    tSkyboxDiffuse: {type: "t",value: 0},
-    fNightScale: {type: "f",value: 1},
-    tDiffuse: {type: "t",value: null}, 
-    tDiffuseNight: {type: "t",value: null}
-};
-
- 
-
-
 const vertexSky =`
 // Referenced Atmospheric scattering vertex shader
 //
@@ -245,25 +200,92 @@ void main(void)
     gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
 }
 `
+
 const fragmentGround = `
 uniform float fNightScale;
 uniform vec3 v3LightPosition;
 uniform sampler2D tDiffuse;
 uniform sampler2D tDiffuseNight;
+uniform sampler2D tDiffuseClouds;
+uniform float time;
 varying vec3 c0;
 varying vec3 c1;
 varying vec3 vNormal;
 varying vec2 vUv;
+
 void main (void)
 {
+    // Animate cloud UVs
+    vec2 cloudUv = vUv;
+    cloudUv.x += time * 0.002; // drift
+    // cloudUv.y += sin(time * 0.5 + vUv.x * 10.0) * 0.005; // Add subtle swirl
+    
     vec3 diffuseTex = texture2D( tDiffuse, vUv ).xyz;
     vec3 diffuseNightTex = texture2D( tDiffuseNight, vUv ).xyz;
-    vec3 day = .75*diffuseTex * c0; //recent change 1-->.8
-    vec3 night = fNightScale * diffuseNightTex  * (1.0 - c0);
-    gl_FragColor = vec4(c1, 1.0) + vec4(day + night, 1.0);
+    vec3 diffuseCloudsTex = texture2D( tDiffuseClouds, cloudUv ).xyz;
+
+    vec3 day = 0.75 * diffuseTex * c0;
+    vec3 night = fNightScale * diffuseNightTex * (1.0 - c0);
+
+    float cloudAlpha = (diffuseCloudsTex.r + diffuseCloudsTex.g + diffuseCloudsTex.b) / 3.0;
+    
+    vec3 dayClouds = diffuseCloudsTex * c0 * 1.8;
+    
+    vec3 nightCloudColor = vec3(0.15, 0.12, 0.1);
+    vec3 nightClouds = nightCloudColor * diffuseCloudsTex * (1.0 - c0) * 0.6;
+
+    vec3 clouds = dayClouds + nightClouds;
+
+    vec3 groundColor = day + night;
+    vec3 finalColor = mix(groundColor, clouds, cloudAlpha * 0.8);
+    
+    gl_FragColor = vec4(c1, 1.0) + vec4(finalColor, 1.0);
 }
 `
-////// ---- Earth ---- ////////
+
+const textureLoader = new TextureLoader(); 
+const EARHRADIUS = 6371.0/1000000;
+const atmosphere = {
+    Kr: 0.0025,
+    Km: 0.0010,
+    ESun: 20.0,
+    g: -0.950,
+    innerRadius: EARHRADIUS,
+    outerRadius: 1.025*EARHRADIUS,
+    wavelength: [0.650, 0.570, 0.475],
+    scaleDepth: 0.25,
+    mieScaleDepth: 0.1
+};
+
+const AtmUniforms = {
+    v3LightPosition: {type: "v3",value: new Vector3(1, 0, 0).normalize()},
+    cPs: {type: "v3",value: new Vector3(1, 0, 0)},
+    v3InvWavelength: {type: "v3",value: new Vector3(1 / Math.pow(atmosphere.wavelength[0], 4), 1 / Math.pow(atmosphere.wavelength[1], 4), 1 / Math.pow(atmosphere.wavelength[2], 4))},
+    fCameraHeight: {type: "f",value: 0},
+    fCameraHeight2: {type: "f",value: 0},
+    fInnerRadius: {type: "f",value: atmosphere.innerRadius},
+    fInnerRadius2: {type: "f",value: atmosphere.innerRadius * atmosphere.innerRadius},
+    fOuterRadius: {type: "f",value: atmosphere.outerRadius},
+    fOuterRadius2: {type: "f",value: atmosphere.outerRadius * atmosphere.outerRadius},
+    fKrESun: {type: "f",value: atmosphere.Kr * atmosphere.ESun},
+    fKmESun: {type: "f",value: atmosphere.Km * atmosphere.ESun},
+    fKr4PI: {type: "f",value: atmosphere.Kr * 4.0 * Math.PI},
+    fKm4PI: {type: "f",value: atmosphere.Km * 4.0 * Math.PI},
+    fScale: {type: "f",value: 1 / (atmosphere.outerRadius - atmosphere.innerRadius)},
+    fScaleDepth: {type: "f",value: atmosphere.scaleDepth},
+    fScaleOverScaleDepth: {type: "f",value: 1 / (atmosphere.outerRadius - atmosphere.innerRadius) / atmosphere.scaleDepth},
+    g: {type: "f",value: atmosphere.g},
+    g2: {type: "f",value: atmosphere.g * atmosphere.g},
+    nSamples: {type: "i",value: 3},
+    fSamples: {type: "f",value: 3.0},
+    tDisplacement: {type: "t",value: 0},
+    tSkyboxDiffuse: {type: "t",value: 0},
+    fNightScale: {type: "f",value: 1},
+    tDiffuse: {type: "t",value: null}, 
+    tDiffuseNight: {type: "t",value: null}, 
+    tDiffuseClouds: {type: "t",value: null},
+    time: {type: "f", value: 0}
+};
 
 class Earth3d extends Group {
     static NAME = "Earth3d";
@@ -290,10 +312,6 @@ class Earth3d extends Group {
             }))
         this.add(this.sky);
 
-
-        // this.sky.material.renderOrder = 1;
-        // this.sky.material.depthWrite: false;
-
         this._sunvect = new Vector3(1,0,0);
         this.sunvect = new Vector3(1,0,0);
         this.ground.material.uniforms.v3LightPosition.value = this._sunvect;
@@ -307,8 +325,10 @@ class Earth3d extends Group {
         this.axisY = new Vector3(0,1,0);
         this.quaternionRotateBack = new Quaternion(1,1,1,1);
 
+        this.omega = 0.00007292115;  // 2π/T
     }
-    update( ) {
+
+    update() {
         this.cameracPs.copy(this.camera.position);
         this.cameracPs.sub(this.parentObj.position);
         this._sunvect.copy(this.sunvect);
@@ -317,44 +337,62 @@ class Earth3d extends Group {
         this.ground.material.uniforms.cPs.value = this.cameracPs;
         this.ground.material.uniforms.v3LightPosition.value = this._sunvect;
     }
-    updateECI( ) {
+
+    updateECI() {
         this.cameracPs.copy(this.camera.position);
         this.cameracPs.sub(this.parentObj.position);
         this.ground.material.uniforms.cPs.value = this.cameracPs;
     }
-    updateAllRotations( ) {
+
+    updateAllRotations() {
         this.cameracPs.copy(this.camera.position);
         this.cameracPs.sub(this.parentObj.position);
         this._sunvect.copy(this.sunvect);
         this.quaternionRotateBack.multiplyQuaternions(this.parentObj.quaternion,this.quaternion);
-        // this.quaternionRotateBack.copy(this.parentObj.quaternion);
         this.quaternionRotateBack.invert();
         this.cameracPs.applyQuaternion( this.quaternionRotateBack );
         this._sunvect.applyQuaternion( this.quaternionRotateBack );
         this.ground.material.uniforms.cPs.value = this.cameracPs;
         this.ground.material.uniforms.v3LightPosition.value = this._sunvect;
     }
-    setSun( sun )
-    {
-        this.sunvect.copy(sun);
+
+
+    loadTextures(pathDay, pathNight, pathClouds, maxAnisotropy = 16) {
+        const diffuse = textureLoader.load(pathDay);
+        const diffuseNight = textureLoader.load(pathNight);
+        const diffuseClouds = textureLoader.load(pathClouds);
+        diffuse.anisotropy = maxAnisotropy; 
+        diffuseNight.anisotropy = maxAnisotropy;
+        diffuseClouds.anisotropy = maxAnisotropy;
+
+
+        diffuseClouds.wrapS = RepeatWrapping;
+        diffuseClouds.wrapT = RepeatWrapping;
+
+        AtmUniforms.tDiffuse.value = diffuse; 
+        AtmUniforms.tDiffuseNight.value = diffuseNight;
+        AtmUniforms.tDiffuseClouds.value = diffuseClouds;
     }
+
+    setPositionXYZ(x, y, z) {
+        this.parentObj.position.set(x,y,z);
+        this.position.set(x,y,z);
+    }    
+
+    setSunXYZ(x, y, z) {
+        this.sunvect.set(x, y, z);
+        this.sunvect.normalize();
+    }
+
+    setSun(r) {
+        this.sunvect.copy(r);
+        this.sunvect.normalize();
+    }
+
     setSunOrigin( )
     {
         this.sunvect.copy(this.position);
         this.sunvect.normalize().negate();
     }
-    loadTextures( pathDay, pathNight, maxAnisotropy = 16 ) {
-        const diffuse = textureLoader.load(pathDay);
-        const diffuseNight = textureLoader.load(pathNight);
-        diffuse.anisotropy = maxAnisotropy; 
-        diffuseNight.anisotropy = maxAnisotropy;
-        AtmUniforms.tDiffuse.value = diffuse; 
-        AtmUniforms.tDiffuseNight.value = diffuseNight;
-    }
-    setPosition( x, y, z ) {
-        this.parentObj.position.set(x,y,z);
-        this.position.set(x,y,z);
-    }    
 }
-
 
