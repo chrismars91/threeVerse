@@ -262,7 +262,7 @@ void main (void)
     vec3 day = .75*diffuseTex * c0;
     vec3 night = fNightScale * diffuseNightTex  * (1.0 - c0);
 
-    cloudUv.x += time * 0.02; // Drift eastward
+    cloudUv.x += time * 0.002; // Drift eastward
     vec3 diffuseCloudsTex = texture2D( tDiffuseClouds, cloudUv ).xyz;
 
     float cloudAlpha = length(c0);
