@@ -201,47 +201,79 @@ void main(void)
 }
 `
 
+// const fragmentGround = `
+// uniform float fNightScale;
+// uniform vec3 v3LightPosition;
+// uniform sampler2D tDiffuse;
+// uniform sampler2D tDiffuseNight;
+// uniform sampler2D tDiffuseClouds;
+// uniform float time;
+// varying vec3 c0;
+// varying vec3 c1;
+// varying vec3 vNormal;
+// varying vec2 vUv;
+
+// void main (void)
+// {
+//     // Animate cloud UVs
+//     vec2 cloudUv = vUv;
+//     cloudUv.x += time * 0.002; // drift
+//     // cloudUv.y += sin(time * 0.5 + vUv.x * 10.0) * 0.005; // Add subtle swirl
+    
+//     vec3 diffuseTex = texture2D( tDiffuse, vUv ).xyz;
+//     vec3 diffuseNightTex = texture2D( tDiffuseNight, vUv ).xyz;
+//     vec3 diffuseCloudsTex = texture2D( tDiffuseClouds, cloudUv ).xyz;
+
+//     vec3 day = 0.75 * diffuseTex * c0;
+//     vec3 night = fNightScale * diffuseNightTex * (1.0 - c0);
+
+//     float cloudAlpha = (diffuseCloudsTex.r + diffuseCloudsTex.g + diffuseCloudsTex.b) / 3.0;
+    
+//     vec3 dayClouds = diffuseCloudsTex * c0 * 1.8;
+    
+//     vec3 nightCloudColor = vec3(0.15, 0.12, 0.1);
+//     vec3 nightClouds = nightCloudColor * diffuseCloudsTex * (1.0 - c0) * 0.6;
+
+//     vec3 clouds = dayClouds + nightClouds;
+
+//     vec3 groundColor = day + night;
+//     vec3 finalColor = mix(groundColor, clouds, cloudAlpha * 0.8);
+    
+//     gl_FragColor = vec4(c1, 1.0) + vec4(finalColor, 1.0);
+// }
+// `
+
 const fragmentGround = `
 uniform float fNightScale;
 uniform vec3 v3LightPosition;
 uniform sampler2D tDiffuse;
 uniform sampler2D tDiffuseNight;
 uniform sampler2D tDiffuseClouds;
-uniform float time;
 varying vec3 c0;
 varying vec3 c1;
 varying vec3 vNormal;
 varying vec2 vUv;
-
+uniform float time;
 void main (void)
 {
-    // Animate cloud UVs
     vec2 cloudUv = vUv;
-    cloudUv.x += time * 0.002; // drift
-    // cloudUv.y += sin(time * 0.5 + vUv.x * 10.0) * 0.005; // Add subtle swirl
-    
     vec3 diffuseTex = texture2D( tDiffuse, vUv ).xyz;
     vec3 diffuseNightTex = texture2D( tDiffuseNight, vUv ).xyz;
+    vec3 day = .75*diffuseTex * c0;
+    vec3 night = fNightScale * diffuseNightTex  * (1.0 - c0);
+
+    cloudUv.x += time * 0.02; // Drift eastward
     vec3 diffuseCloudsTex = texture2D( tDiffuseClouds, cloudUv ).xyz;
 
-    vec3 day = 0.75 * diffuseTex * c0;
-    vec3 night = fNightScale * diffuseNightTex * (1.0 - c0);
+    float cloudAlpha = length(c0);
 
-    float cloudAlpha = (diffuseCloudsTex.r + diffuseCloudsTex.g + diffuseCloudsTex.b) / 3.0;
-    
-    vec3 dayClouds = diffuseCloudsTex * c0 * 1.8;
-    
-    vec3 nightCloudColor = vec3(0.15, 0.12, 0.1);
-    vec3 nightClouds = nightCloudColor * diffuseCloudsTex * (1.0 - c0) * 0.6;
+    vec3 nightClouds = vec3(0.08, 0.06, 0.05) * diffuseCloudsTex * (1.0 - cloudAlpha);
+    vec3 clouds = diffuseCloudsTex * cloudAlpha + nightClouds;
 
-    vec3 clouds = dayClouds + nightClouds;
-
-    vec3 groundColor = day + night;
-    vec3 finalColor = mix(groundColor, clouds, cloudAlpha * 0.8);
-    
-    gl_FragColor = vec4(c1, 1.0) + vec4(finalColor, 1.0);
+    gl_FragColor = vec4(c1, 1.0) + vec4(.7*clouds + day + night, 1.0);
 }
 `
+
 
 const textureLoader = new TextureLoader(); 
 const EARHRADIUS = 6371.0/1000000;
